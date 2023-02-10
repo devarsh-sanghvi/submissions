@@ -115,25 +115,9 @@ order by order_date desc;
  select 1 union all select 1 union all select 1;
 
  -- explicit insertion on identity is not allowed by default
- SET IDENTITY_INSERT sales.promotions ON;
+ SET IDENTITY_INSERT sales.feedbacks ON;
 
-INSERT INTO sales.promotions (
-    promotion_id,
-    promotion_name,
-    discount,
-    start_date,
-    expired_date
-)
-VALUES
-    (
-        4,
-        '2019 Spring Promotion',
-        0.25,
-        '20190201',
-        '20190301'
-    );
+INSERT INTO sales.feedbacks(feedback_id,comment)
+VALUES(4,'Can you give me 30% discount?');
 
-
-SET IDENTITY_INSERT sales.promotions OFF;
-
-
+SET IDENTITY_INSERT sales.feedbacks OFF;
