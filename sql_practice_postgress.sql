@@ -556,3 +556,11 @@ end;
 $$
 select get_nth_fibo(6);
 -- 
+
+-- Transfer table from one schema to another schema
+-- https://bytes.com/topic/postgresql/answers/400124-transfer-database-tables-schema
+-- copy paste table with constrains and indexes
+create table schema2.the_table (like schema1.the_table including all);
+insert into schema2.the_table
+select * 
+from schema1.the_table;
