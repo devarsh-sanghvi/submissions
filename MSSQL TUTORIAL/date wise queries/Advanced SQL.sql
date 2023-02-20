@@ -204,12 +204,12 @@ PRINT @info
 -- SET jsonCol=JSON_MODIFY(jsonCol,'$.info.address.town','London')
 -- WHERE EmployeeID=17
 
+-- Json to table
 DECLARE @json NVARCHAR(MAX);
 SET @json = N'[
   {"id": 2, "info": {"name": "John", "surname": "Smith"}, "age": 25},
   {"id": 5, "info": {"name": "Jane", "surname": "Smith"}, "dob": "2005-11-04T12:00:00"}
 ]';
-go
 
 SELECT *
 FROM OPENJSON(@json)
@@ -220,3 +220,103 @@ FROM OPENJSON(@json)
     age INT,
     dateOfBirth DATETIME2 '$.dob'
   );
+
+  go
+
+DECLARE @json NVARCHAR(4000) = N'{  
+      "path": {  
+            "to":{  
+                 "sub-object":["en-GB", "en-UK","de-AT","es-AR","sr-Cyrl"]  
+                 }  
+              }  
+ }';
+
+SELECT *
+FROM OPENJSON(@json,'$.path.to."sub-object"');
+
+go
+
+-- error: unable to get sql:identity
+DECLARE @array VARCHAR(MAX);
+SET @array = '[{"month":"Jan", "temp":10},{"month":"Feb", "temp":12},{"month":"Mar", "temp":15},
+               {"month":"Apr", "temp":17},{"month":"May", "temp":23},{"month":"Jun", "temp":27}
+              ]';
+
+SELECT * FROM OPENJSON(@array)
+        WITH (  month VARCHAR(3),
+                temp int,
+                month_id tinyint '$.sql:identity()') as months
+
+go
+
+DECLARE @json NVARCHAR(MAX);
+SET @json = N'[  
+  {"id": 2, "info": {"name": "John", "surname": "Smith"}, "age": 25},
+  {"id": 5, "info": {"name": "Jane", "surname": "Smith", "skills": ["SQL", "C#", "Azure"]}, "dob": "2005-11-04T12:00:00"}  
+]';
+
+SELECT id, firstName, lastName, age, dateOfBirth, skill  
+FROM OPENJSON(@json)  
+  WITH (
+    id INT 'strict $.id',
+    firstName NVARCHAR(50) '$.info.name',
+    lastName NVARCHAR(50) '$.info.surname',  
+    age INT,
+    dateOfBirth DATETIME2 '$.dob',
+    skills NVARCHAR(MAX) '$.info.skills' AS JSON
+  )
+OUTER APPLY OPENJSON(skills)
+  WITH (skill NVARCHAR(8) '$');
+go
+
+-- Import JSON data into SQL Server tables
+DECLARE @jsonVariable NVARCHAR(MAX);
+
+SET @jsonVariable = N'[
+  {
+    "Order": {  
+      "Number":"SO43659",  
+      "Date":"2011-05-31T00:00:00"  
+    },  
+    "AccountNumber":"AW29825",  
+    "Item": {  
+      "Price":2024.9940,  
+      "Quantity":1  
+    }  
+  },  
+  {  
+    "Order": {  
+      "Number":"SO43661",  
+      "Date":"2011-06-01T00:00:00"  
+    },  
+    "AccountNumber":"AW73565",  
+    "Item": {  
+      "Price":2024.9940,  
+      "Quantity":3  
+    }  
+  }
+]';
+
+-- INSERT INTO <sampleTable>  
+SELECT SalesOrderJsonData.*
+FROM OPENJSON (@jsonVariable, N'$')
+  WITH (
+    Number VARCHAR(200) N'$.Order.Number',
+    Date DATETIME N'$.Order.Date',
+    Customer VARCHAR(200) N'$.AccountNumber',
+    Quantity INT N'$.Item.Quantity'
+  ) AS SalesOrderJsonData;
+
+go
+
+-- selecting table specific fields
+select ois.*, ord.* from sales.order_items ois inner join sales.orders ord on ois.order_id = ord.order_id;
+
+go
+-- examples 
+select json_query('{"name":"Lavanya","sub-names":["amar","akbar","anthony"]}','$."sub-names"');
+select json_value('{"name":"Lavanya","sub-names":["amar","akbar","anthony"]}','$."sub-names"[0]');
+select * from openjson('{"name":"Lavanya","sub-names":["amar","akbar","anthony"]}','$') 
+	with (name varchar(10), "sub-names" nvarchar(max) as json);
+go
+
