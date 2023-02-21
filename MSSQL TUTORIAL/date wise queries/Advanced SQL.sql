@@ -320,3 +320,317 @@ select * from openjson('{"name":"Lavanya","sub-names":["amar","akbar","anthony"]
 	with (name varchar(10), "sub-names" nvarchar(max) as json);
 go
 
+-- table as array
+with array_table as (
+select ROW_NUMBER() over ( order by value) as id , value from string_split('a,b,c,d,e',',')
+)
+select * from array_table;
+go
+-- Dynamic SQL
+
+DECLARE @statement VARCHAR(2000);
+SET @statement = 'SELECT id, customer_name
+FROM customer
+WHERE status = 1';
+EXECUTE (@statement);
+
+EXEC sp_executesql
+N'SELECT *
+    FROM 
+        production.products 
+    WHERE 
+        list_price> @listPrice AND
+        category_id = @categoryId
+    ORDER BY
+        list_price DESC', 
+N'@listPrice DECIMAL(10,2),
+@categoryId INT'
+,@listPrice = 100
+,@categoryId = 1;
+
+go
+
+CREATE OR ALTER PROCEDURE usp_query (
+    @table NVARCHAR(128)
+)
+AS
+BEGIN
+
+    DECLARE @sql NVARCHAR(MAX);
+    -- construct SQL
+    SET @sql = N'SELECT * FROM ' + @table;
+    -- execute the SQL
+    EXEC sp_executesql @sql;
+    
+END;
+go
+EXEC usp_query 'production.brands';
+go
+
+-- recursive cte
+with  fib(f1,f2,i) as 
+(
+select 0,1,1
+UNION ALL
+select f2,(f1+f2),i+1 from fib
+where i <10
+)
+select f1 from fib;
+
+-- Performance Tunning
+set statistics time on;
+with  fib(f1,f2,i) as 
+(
+select 0,1,1
+UNION ALL
+select f2,(f1+f2),i+1 from fib
+where i <25
+)
+select f1 from fib;
+set statistics time off;
+
+set statistics IO on;
+with  fib(f1,f2,i) as 
+(
+select 0,1,1
+UNION ALL
+select f2,(f1+f2),i+1 from fib
+where i <25
+)
+select f1 from fib;
+set statistics IO off;
+
+set showplan_all on;
+go
+with  fib(f1,f2,i) as 
+(
+select 0,1,1
+UNION ALL
+select f2,(f1+f2),i+1 from fib
+where i <25
+)
+select f1 from fib;
+go
+set showplan_all off;
+go
+
+set statistics profile on;
+with  fib(f1,f2,i) as 
+(
+select 0,1,1
+UNION ALL
+select f2,(f1+f2),i+1 from fib
+where i <25
+)
+select f1 from fib;
+set statistics profile off;
+
+set showplan_xml on;
+go
+with  fib(f1,f2,i) as 
+(
+select 0,1,1
+UNION ALL
+select f2,(f1+f2),i+1 from fib
+where i <25
+)
+select f1 from fib;
+go
+set showplan_xml off;
+go
+
+set STATISTICS XML on;
+go
+with  fib(f1,f2,i) as 
+(
+select 0,1,1
+UNION ALL
+select f2,(f1+f2),i+1 from fib
+where i <25
+)
+select f1 from fib;
+go
+set STATISTICS XML off;
+go
+-- date series
+select dateadd(month,1,'2001/10/02')
+
+-- indexes
+CREATE TABLE production.parts(
+    part_id   INT NOT NULL, 
+    part_name VARCHAR(100)
+);
+
+INSERT INTO 
+    production.parts(part_id, part_name)
+VALUES
+    (1,'Frame'),
+    (2,'Head Tube'),
+    (3,'Handlebar Grip'),
+    (4,'Shock Absorber'),
+    (5,'Fork');
+go
+
+SELECT 
+    part_id, 
+    part_name
+FROM 
+    production.parts
+WHERE 
+    part_id = 5;
+go
+
+CREATE CLUSTERED INDEX ix_parts_id
+ON production.parts (part_id);  
+go
+
+SELECT 
+    part_id, 
+    part_name
+FROM 
+    production.parts
+WHERE 
+    part_id = 5;
+go
+
+-- nonclustered index on one column
+CREATE INDEX ix_customers_city
+ON sales.customers(city);
+go
+SELECT 
+    customer_id, 
+    city
+FROM 
+    sales.customers
+WHERE 
+    city = 'Atwater';
+
+-- non clustered index on multiple columns
+CREATE INDEX ix_customers_name 
+ON sales.customers(last_name, first_name);
+
+SELECT 
+    customer_id, 
+    first_name, 
+    last_name
+FROM 
+    sales.customers
+WHERE 
+    last_name = 'Berg' AND 
+    first_name = 'Monika';
+
+-- index seek is performed as column last_name is set at high priority 
+SELECT 
+    customer_id, 
+    first_name, 
+    last_name
+FROM 
+    sales.customers
+WHERE 
+    last_name = 'Albert';
+
+
+-- index scan is performed as column first_name is set at low priority 
+SELECT 
+    customer_id, 
+    first_name, 
+    last_name
+FROM 
+    sales.customers
+WHERE 
+	first_name = 'Adam';
+
+-- rename index
+EXEC sp_rename 
+        @objname = N'sales.customers.ix_customers_city',
+        @newname = N'ix_cust_city' ,
+        @objtype = N'INDEX';
+
+-- start with 0 example
+select SUBSTRING('abcsdff',0,4) , SUBSTRING('abcsdff',1,4);
+
+-- index on computed columns
+-- Similar to index on expression but a computed column must be defined which holds the result of expression and then
+-- create index on computed column. has some rules as requriements.
+
+-- Script for unused index
+SELECT
+    objects.name AS Table_name,
+    indexes.name AS Index_name,
+    dm_db_index_usage_stats.user_seeks,
+    dm_db_index_usage_stats.user_scans,
+    dm_db_index_usage_stats.user_updates
+FROM
+    sys.dm_db_index_usage_stats
+    INNER JOIN sys.objects ON dm_db_index_usage_stats.OBJECT_ID = objects.OBJECT_ID
+    INNER JOIN sys.indexes ON indexes.index_id = dm_db_index_usage_stats.index_id AND dm_db_index_usage_stats.OBJECT_ID = indexes.OBJECT_ID
+WHERE
+    indexes.is_primary_key = 0 --This line excludes primary key constarint
+    AND
+    indexes. is_unique = 0 --This line excludes unique key constarint
+    AND 
+    dm_db_index_usage_stats.user_updates <> 0 -- This line excludes indexes SQL Server hasn’t done any work with
+    AND
+    dm_db_index_usage_stats. user_lookups = 0
+    AND
+    dm_db_index_usage_stats.user_seeks = 0
+    AND
+    dm_db_index_usage_stats.user_scans = 0
+ORDER BY
+    dm_db_index_usage_stats.user_updates DESC
+
+-- Missing Indexes
+SELECT db.[name] AS [DatabaseName]
+    ,id.[object_id] AS [ObjectID]
+	,OBJECT_NAME(id.[object_id], db.[database_id]) AS [ObjectName]
+    ,id.[statement] AS [FullyQualifiedObjectName]
+    ,id.[equality_columns] AS [EqualityColumns]
+    ,id.[inequality_columns] AS [InEqualityColumns]
+    ,id.[included_columns] AS [IncludedColumns]
+    ,gs.[unique_compiles] AS [UniqueCompiles]
+    ,gs.[user_seeks] AS [UserSeeks]
+    ,gs.[user_scans] AS [UserScans]
+    ,gs.[last_user_seek] AS [LastUserSeekTime]
+    ,gs.[last_user_scan] AS [LastUserScanTime]
+    ,gs.[avg_total_user_cost] AS [AvgTotalUserCost]  -- Average cost of the user queries that could be reduced by the index in the group.
+    ,gs.[avg_user_impact] AS [AvgUserImpact]  -- The value means that the query cost would on average drop by this percentage if this missing index group was implemented.
+    ,gs.[system_seeks] AS [SystemSeeks]
+    ,gs.[system_scans] AS [SystemScans]
+    ,gs.[last_system_seek] AS [LastSystemSeekTime]
+    ,gs.[last_system_scan] AS [LastSystemScanTime]
+    ,gs.[avg_total_system_cost] AS [AvgTotalSystemCost]
+    ,gs.[avg_system_impact] AS [AvgSystemImpact]  -- Average percentage benefit that system queries could experience if this missing index group was implemented.
+    ,gs.[user_seeks] * gs.[avg_total_user_cost] * (gs.[avg_user_impact] * 0.01) AS [IndexAdvantage]
+    ,'CREATE INDEX [IX_' + OBJECT_NAME(id.[object_id], db.[database_id]) + '_' + REPLACE(REPLACE(REPLACE(ISNULL(id.[equality_columns], ''), ', ', '_'), '[', ''), ']', '') + CASE
+        WHEN id.[equality_columns] IS NOT NULL
+            AND id.[inequality_columns] IS NOT NULL
+            THEN '_'
+        ELSE ''
+        END + REPLACE(REPLACE(REPLACE(ISNULL(id.[inequality_columns], ''), ', ', '_'), '[', ''), ']', '') + '_' + LEFT(CAST(NEWID() AS [nvarchar](64)), 5) + ']' + ' ON ' + id.[statement] + ' (' + ISNULL(id.[equality_columns], '') + CASE
+        WHEN id.[equality_columns] IS NOT NULL
+            AND id.[inequality_columns] IS NOT NULL
+            THEN ','
+        ELSE ''
+        END + ISNULL(id.[inequality_columns], '') + ')' + ISNULL(' INCLUDE (' + id.[included_columns] + ')', '') AS [ProposedIndex]
+    ,CAST(CURRENT_TIMESTAMP AS [smalldatetime]) AS [CollectionDate]
+FROM [sys].[dm_db_missing_index_group_stats] gs WITH (NOLOCK)
+INNER JOIN [sys].[dm_db_missing_index_groups] ig WITH (NOLOCK) ON gs.[group_handle] = ig.[index_group_handle]
+INNER JOIN [sys].[dm_db_missing_index_details] id WITH (NOLOCK) ON ig.[index_handle] = id.[index_handle]
+INNER JOIN [sys].[databases] db WITH (NOLOCK) ON db.[database_id] = id.[database_id]
+WHERE  db.[database_id] = DB_ID()
+--AND OBJECT_NAME(id.[object_id], db.[database_id]) = 'YourTableName'
+ORDER BY ObjectName, [IndexAdvantage] DESC
+OPTION (RECOMPILE);
+
+
+
+-- Performance Tunning
+Set statistics io on;
+select * from [sales].[customers] 
+where state = 'NY';
+
+select customer_id , first_name , last_name from [sales].[customers] 
+where state = 'NY';
+
+drop index ix_customer_state on [sales].[customers]
+create nonclustered index ix_customer_state on sales.[customers](state) include (first_name , last_name);
