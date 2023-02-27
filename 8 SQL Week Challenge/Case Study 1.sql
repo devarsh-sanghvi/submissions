@@ -336,3 +336,74 @@ group by
 	customer_id
 order by
 	customer_id
+	
+-- Bonus Queries 
+
+-- (Join All The Things)
+-- output columns: customer_id 	order_date 	product_name 	price 	member:(Y/N)
+
+select 
+	sl.customer_id , sl.order_date, mn.product_name, mn.price,
+	CASE
+		when sl.order_date >= mm.join_date then 'Y'
+		else 'N' 
+	END as member
+from
+	dannys_diner.sales sl
+left join
+	dannys_diner.menu mn
+on
+	sl.product_id = mn.product_id
+left join
+	dannys_diner.members mm
+on
+	sl.customer_id = mm.customer_id
+order by
+	sl.customer_id , sl.order_date, mn.price Desc
+	
+-- (Rank All The Things)
+-- output columns: customer_id 	order_date 	product_name 	price 	member 	ranking
+
+with final_result as (
+	select 
+		sl.customer_id , sl.order_date, mn.product_name, mn.price,
+		'Y' as member,
+		dense_rank() over(partition by sl.customer_id order by sl.order_date,mn.price DESC) ranking
+	from
+		dannys_diner.sales sl
+	left join
+		dannys_diner.menu mn
+	on
+		sl.product_id = mn.product_id
+	left join
+		dannys_diner.members mm
+	on
+		sl.customer_id = mm.customer_id
+	where
+		sl.order_date >= mm.join_date	
+	
+	UNION ALL
+	
+	select 
+		sl.customer_id , sl.order_date, mn.product_name, mn.price,
+		'N' as member, null as ranking
+	from
+		dannys_diner.sales sl
+	left join
+		dannys_diner.menu mn
+	on
+		sl.product_id = mn.product_id
+	left join
+		dannys_diner.members mm
+	on
+		sl.customer_id = mm.customer_id
+	where
+		sl.order_date < mm.join_date or mm.join_date is null
+	
+)
+select
+	* 
+from 
+	final_result 
+order by
+	customer_id , order_date, price Desc
