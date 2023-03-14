@@ -1,8 +1,7 @@
 /* --------------------
-   Case Study Questions
+   Case Study 1
    --------------------*/
 
-select * from dannys_diner.sales
 
 -- 1. What is the total amount each customer spent at the restaurant?
 
@@ -36,6 +35,7 @@ group by
 order by
 	customer_id
 
+-- self-remark: you should use count(distinct order_date) to get it done in single query
 
 -- 3. What was the first item from the menu purchased by each customer?
 -- Unpredictable as input table seems to be sorted with product_id after join. If thats okay then here is the query.
@@ -125,6 +125,8 @@ where
 	favourite_rank = 1
 order by
 	customer_id
+
+-- self-remark: you could have applied DENSE_RANK() OVER(PARTITION BY s.customer_id ORDER BY COUNT(s.customer_id) DESC) AS rank in first cte minimize no of cte
 
 -- 6. Which item was purchased first by the customer after they became a member?
 
@@ -252,7 +254,7 @@ order by
 -- 9.  If each $1 spent equates to 10 points and sushi has a 2x points multiplier - how many points would each customer have?
 with customer_points as (
 	select 
-		sl.customer_id ,
+		sl.* ,mn.product_name,
 		mn.price,
 		10 points,
 		case mn.product_name
@@ -286,7 +288,7 @@ with normal_orders as (
 	on 
 		sl.customer_id = mn.customer_id
 	where
-		(order_date < join_date or order_date >= join_date and order_date>= join_date + '7 days'::interval )and Extract(month from order_date)  = 1 
+		(order_date < join_date or  order_date>= join_date + '7 days'::interval )and Extract(month from order_date)  = 1 
 ),
 orders_in_loyalty_program as (
 	select 
@@ -298,8 +300,9 @@ orders_in_loyalty_program as (
 	on 
 		sl.customer_id = mn.customer_id
 	where
-		join_date <= order_date and order_date< join_date + '7 days'::interval  and Extract(month from order_date)  = 1 
-),
+		join_date <= order_date and order_date< join_date + '7 days'::interval -- and Extract(month from order_date)  = 1 
+)
+,
 customer_points as (
 	select 
 		*,
@@ -314,7 +317,7 @@ customer_points as (
 		dannys_diner.menu mn
 	on
 		nmo.product_id = mn.product_id
-	UNION
+	UNION ALL
 	select 
 		*,
 		10 points,
@@ -337,6 +340,9 @@ group by
 order by
 	customer_id
 	
+-- effective query from solutions [https://medium.com/analytics-vidhya/8-week-sql-challenge-case-study-week-1-dannys-diner-2ba026c897ab]:
+-- self-remark: you should have used case statement to minimize no of cte
+
 -- Bonus Queries 
 
 -- (Join All The Things)

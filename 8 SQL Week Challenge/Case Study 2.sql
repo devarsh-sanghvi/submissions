@@ -1,4 +1,6 @@
--- Case Study 2
+/* --------------------
+   Case Study 2
+   --------------------*/
 -- Data Cleanup of cutomer_orders ,runner_orders
 update 
 	pizza_runner.customer_orders 
@@ -47,20 +49,16 @@ update
 set
 	distance = replace(distance,'km','');
 
-select distance::float from pizza_runner.runner_orders
-
 update 
 	pizza_runner.runner_orders
 set
 	duration = REGEXP_REPLACE(duration,'([0-9]*)(.*)','\1')
 where 
 	duration is not null;
-select REGEXP_REPLACE(duration,'([0-9]*)(.*)','\1') from pizza_runner.runner_orders where duration is not null
--- select REGEXP_REPLACE(duration,'[a-zA-Z]*$','') from pizza_runner.runner_orders where duration is not null
+
+alter table pizza_runner.runners add primary key(runner_id);
 	
-	
-select * from pizza_runner.customer_orders;
-select * from pizza_runner.runner_orders;
+
 -- A. Pizza Metrics
 
 -- How many pizzas were ordered?
@@ -425,6 +423,7 @@ where
 				count DESC 
 			limit 1)
 
+
 /* Generate an order item for each record in the customers_orders table in the format of one of the following:
 	Meat Lovers
  	Meat Lovers - Exclude Beef
@@ -488,9 +487,219 @@ left join
 on
 	extras_tn.order_id = co.order_id and extras_tn.pizza_id = co.pizza_id
 order by
-	order_id
+	order_id;
+
 
 /* Generate an alphabetically ordered comma separated ingredient list for each pizza order from the customer_orders table and add a 2x in front of any relevant ingredients
  	For example: "Meat Lovers: 2xBacon, Beef, ... , Salami"*/
+with co_with_used_toppings as (
+	select 
+		row_number() over(order by order_id ) sr_no, co.* , unnest(string_to_array(toppings,','))::int topping_id , 0 is_extra
+	from
+		pizza_runner.customer_orders co
+	left join
+		pizza_runner.pizza_recipes pr
+	on
+		co.pizza_id = pr.pizza_id
+	
+	EXCEPT
+	
+	select 
+		row_number() over(order by order_id ) sr_no,co.* , unnest(string_to_array(extras,','))::int topping_id , 0 is_extra
+	from
+		pizza_runner.customer_orders co
+	
+	EXCEPT
+	
+	select 
+		row_number() over(order by order_id ) sr_no,co.* , unnest(string_to_array(exclusions,','))::int topping_id , 0 is_extra
+	from
+		pizza_runner.customer_orders co
+	
+	UNION
+	
+	select 
+		row_number() over(order by order_id ) sr_no,co.* , unnest(string_to_array(extras,','))::int topping_id , 1 is_extra
+	from
+		pizza_runner.customer_orders co
+),
+sr_no_with_ingredients as (
+select 
+	sr_no ,order_id , customer_id , pizza_id, exclusions , extras,order_time ,
+	string_agg(
+	case is_extra
+		when 0
+		then
+			topping_name 
+		when 1
+		then
+			'2x'||topping_name
+	end,', ' order by topping_name) ingredient_list
+from 
+	co_with_used_toppings cwut
+left join
+	pizza_runner.pizza_toppings pr
+on 
+	cwut.topping_id = pr.topping_id
+group by
+	sr_no ,order_id , customer_id , pizza_id, exclusions , extras,order_time
+)
+select 
+	order_id , customer_id , srwi.pizza_id, exclusions , extras,order_time , pizza_name || ': ' || ingredient_list  as ingredient_list
+	
+from 
+	sr_no_with_ingredients srwi
+left join
+	pizza_runner.pizza_names pn
+on
+	srwi.pizza_id = pn.pizza_id;
+	
 
 -- What is the total quantity of each ingredient used in all delivered pizzas sorted by most frequent first?
+with co_with_used_toppings as (
+	select 
+		row_number() over(order by order_id ) sr_no, unnest(string_to_array(toppings,','))::int topping_id 
+	from
+		pizza_runner.customer_orders co
+	left join
+		pizza_runner.pizza_recipes pr
+	on
+		co.pizza_id = pr.pizza_id
+	
+	EXCEPT
+	
+	select 
+		row_number() over(order by order_id ) sr_no, unnest(string_to_array(exclusions,','))::int topping_id 
+	from
+		pizza_runner.customer_orders co
+	
+	UNION ALL
+	
+	select 
+		row_number() over(order by order_id ) sr_no,  unnest(string_to_array(extras,','))::int topping_id
+	from
+		pizza_runner.customer_orders co
+)
+select 
+	topping_name , count(*) total_quantity
+from
+	co_with_used_toppings cwut
+left join
+	pizza_runner.pizza_toppings pt
+on
+	cwut.topping_id =  pt.topping_id
+group by
+	topping_name
+order by
+	total_quantity DESC;
+	
+
+-- D. Pricing and Ratings
+
+-- If a Meat Lovers pizza costs $12 and Vegetarian costs $10 and there were no charges for changes - how much money has Pizza Runner made so far if there are no delivery fees?
+select 
+	sum(case pizza_id
+	   when 1 then 12
+	   when 2 then 10
+	   end) earnings
+from
+	pizza_runner.customer_orders;
+
+
+-- What if there was an additional $1 charge for any pizza extras?
+-- 	Add cheese is $1 extra
+select 
+	sum(case pizza_id
+	   when 1 
+			then 12 + coalesce(cardinality(string_to_array(extras,',')),0)
+	   when 2 
+			then 10 + coalesce(cardinality(string_to_array(extras,',')),0)
+	   end) earnings
+from
+	pizza_runner.customer_orders;
+
+-- The Pizza Runner team now wants to add an additional ratings system that allows customers to rate their runner, how would you design an additional table for this new dataset - generate a schema for this new table and insert your own data for ratings for each successful customer order between 1 to 5.
+-- drop schema pizza_runner_ratings cascade
+create schema  pizza_runner_ratings
+	create table runner_ratings (
+		order_id int ,
+		runner_id int ,
+		customer_id int ,
+		rating int check (rating  between 0 and 5) not null,
+		primary key (order_id,customer_id,runner_id)
+	);
+insert into 
+	pizza_runner_ratings.runner_ratings 
+values 
+	(1,1,101,4),
+	(2,1,101,5),
+	(4,2,103,3);
+
+
+-- Using your newly generated table - can you join all of the information together to form a table which has the following information for successful deliveries?
+-- 	customer_id
+-- 	order_id
+-- 	runner_id
+-- 	rating
+-- 	order_time
+-- 	pickup_time
+-- 	Time between order and pickup
+-- 	Delivery duration
+-- 	Average speed
+-- 	Total number of pizzas
+
+select 
+	co.customer_id , co.order_id , ro.runner_id, rr.rating, co.order_time, ro.pickup_time,
+	ro.pickup_time::timestamp-co.order_time time_between_order_and_pickup, ro.duration || 'min' duration ,
+	round((ro.distance::float/ro.duration::float*60.0)::numeric,2) || 'km/hr' speed,
+	count(*) total_pizza_ordered
+from
+	pizza_runner.customer_orders co 
+left join
+	pizza_runner.runner_orders ro
+on
+	co.order_id = ro.order_id
+left join
+	pizza_runner_ratings.runner_ratings rr
+on
+	co.order_id = rr.order_id and ro.runner_id = rr.runner_id and co.customer_id = rr.customer_id
+where
+	ro.cancellation is  null
+group by
+	co.customer_id , co.order_id , ro.runner_id, rr.rating, co.order_time, ro.pickup_time,ro.duration,ro.distance
+
+-- If a Meat Lovers pizza was $12 and Vegetarian $10 fixed prices with no cost for extras and each runner is paid $0.30 per kilometre traveled - how much money does Pizza Runner have left over after these deliveries?
+
+select
+	sum(case pizza_id
+	   when 1 then 12
+	   when 2 then 10
+	   end) earnings,
+	round(sum(0.3 *ro.distance::float)::numeric,2) runners_paid,
+	sum(case pizza_id
+	   when 1 then 12
+	   when 2 then 10
+	   end) - round(sum(0.3 *ro.distance::float)::numeric,2) amount_left
+from
+	pizza_runner.customer_orders co
+left join
+	pizza_runner.runner_orders ro
+on
+	co.order_id = ro.order_id	
+
+
+-- E. Bonus Questions
+
+-- If Danny wants to expand his range of pizzas - how would this impact the existing data design? Write an INSERT statement to demonstrate what would happen if a new Supreme pizza with all the toppings was added to the Pizza Runner menu?
+
+-- Adding a new pizaa with all ingredients as its recipie won't affrect the data design of any of the current tables
+insert into 
+	pizza_runner.pizza_names 
+values
+	(3,'Supreme pizza')
+	
+insert into
+	pizza_runner.pizza_recipes
+values
+	(3,'1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12')
+	
